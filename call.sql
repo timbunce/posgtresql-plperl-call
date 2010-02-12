@@ -28,6 +28,10 @@ is call('bit_length(text)', 'jose'), 32;
 is call('abs(double precision)', -42.5), '42.5';
 is call('bit_length(character varying(90))', 'jose'), 32;
 
+# --- lock calls
+call('pg_try_advisory_lock_shared(bigint)', 1234);
+call('pg_advisory_unlock_all()');
+
 # bad calls
 eval { call('abs(int)', -42.5) };
 like $@, qr/invalid input syntax for integer/;
@@ -55,7 +59,7 @@ is call('string_to_array(text, text)', 'xx~^~yy~^~zz', '~^~'), '{xx,yy,zz}';
 is call('array_dims(text[])', '{a,b,c}'), '[1:3]';
 is call('array_dims(text[])', [qw(a b c)]), '[1:3]';
 is call('array_dims(text[])', [[1,2,3], [4,5,6]]), '[1:2][1:3]';
-is call('array_cat(int[], int[])', [1,2,3], [4,5,6]), '{1,2,3,4,5,6}';
+is call('array_cat(int[], int[])', [1,2,3], [2,1]), '{1,2,3,2,1}';
 
 
 # ====== single-value multi-row function ======
@@ -68,17 +72,15 @@ is_deeply \@ary, [ 11, 12, 13 ];
 is scalar @ary, 10;
 is_deeply \@ary, [ 10..19 ];
 
-# scalar context just returns first row
-@ary = scalar call('generate_series(int,int)', 10, 19);
-is scalar @ary, 1;
-is_deeply \@ary, [ 10 ];
-
 @ary = call('generate_series(int,int,int)', 10, 19, 4);
 is_deeply \@ary, [ 10, 14, 18 ];
 
 @ary = call('generate_series(timestamp,timestamp,interval)', '2008-03-01', '2008-03-02', '12 hours');
 is_deeply \@ary, [ '2008-03-01 00:00:00', '2008-03-01 12:00:00', '2008-03-02 00:00:00' ];
 
+# bad calls
+eval { scalar call('generate_series(int,int)', 10, 19) };
+like $@, qr/returned more than one row/;
 
 # ====== multi-value (record) returning functions ======
 
@@ -115,6 +117,27 @@ is scalar @ary, 5;
 is $ary[-1]->{r1}, 5;
 is $ary[-1]->{r2}, 6;
 spi_exec_query('drop function f2()');
+
+# ====== functions with defaults or varargs ======
+
+spi_exec_query(q{
+	create or replace function f3(int default 42) returns int language plperl as $$
+		return shift() + 1;
+	$$
+});
+is call('f3()'), 43;
+spi_exec_query('drop function f3(int)');
+
+spi_exec_query(q{
+	create or replace function f4(VARIADIC numeric[]) returns float language plperlu as $$
+		use PostgreSQL::PLPerl::Call;
+		$sum += $_ for call('unnest(numeric[])', $_[0]);
+		return $sum;
+	$$
+});
+is call('f4(numeric, numeric)',          10,11   ), 21;
+is call('f4(numeric, numeric, numeric)', 10,11,12), 33;
+spi_exec_query('drop function f4(varadic numeric[])');
 
 # === finish up
 Test::More->builder->_ending;
