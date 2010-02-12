@@ -1,9 +1,49 @@
 package PostgreSQL::PLPerl::Call;
 # vim: sw=4:ts=8:sts=4:et
 
-=for comment
+=head1 NAME
 
-doesn't handle types containing commas, e.g numeric(p,s) 
+PostgreSQL::PLPerl::Call - Simple interface for calling SQL functions from PostgreSQL PL/Perl
+
+=head1 SYNOPSIS
+
+    use PostgreSQL::PLPerl::Call qw(call);
+
+Returning single-row single-column values:
+
+    $pi = call('pi()'); # 3.14159265358979
+
+    $net = call('network(inet)', '192.168.1.5/24'); # '192.168.1.0/24';
+
+    $seqn = call('nextval(regclass)', $sequence_name);
+
+    $dims = call('array_dims(text[])', '{a,b,c}');   # '[1:3]'
+
+    # array arguments can be perl array references:
+    $ary = call('array_cat(int[], int[])', [1,2,3], [2,1]); # '{1,2,3,2,1}'
+
+Returning multi-row single-column values:
+
+    @ary = call('generate_series(int,int)', 10, 15); # (10,11,12,13,14,15)
+
+Returning single-row multi-column values:
+
+    # assuming create function func(int) returns table (r1 text, r2 int) ...
+    $row = call('func(int)', 42); # returns hash ref { r1=>..., r2=>... }
+
+Returning multi-row multi-column values:
+
+    @rows = call('pg_get_keywords()'); # ({...}, {...}, ...)
+
+=head1 DESCRIPTION
+
+
+=head2 Limitations
+
+Types that contain a comma can't be used in the call signature. That's not a
+problem in practice as it only affects 'C<numeric(p,s)>' and 'C<decimal(p,s)>'
+and the 'C<,s>' part isn't needed. Typically the 'C<(p,s)>' portion isn't used in
+signatures.
 
 =cut
 
@@ -54,31 +94,24 @@ sub call {
 
     my $rv = $callsub->( $prepargs ? $prepargs->(@_) : @_ );
 
-    # XXX ? switch 'single column' logic to come first and be more like
-    # return $row->{$spname} if keys %$row == 1 and exists $row->{$spname};
+    my $rows = $rv->{rows};
+    my $row1 = $rows->[0] # peek at first row
+        or return;        # no row: undef in scalar context else empty list
+
+    my $is_single_column = (keys %$row1 == 1 and exists $row1->{$spname});
 
     if (wantarray) {                   # list context - all rows
-        my $rows = $rv->{rows};
 
-        # return empty list if no rows
-        return unless my $row1 = $rows->[0]; # peek at first row
-
-        # return all rows as hash refs if more that one column
-        return @$rows if keys %$row1 > 1;
-
-        # return all rows as simple list of values if only one column
-        return map { $_->{$spname} } @$rows;
+        return map { $_->{$spname} } @$rows if $is_single_column;
+        return @$rows;
     }
     elsif (defined wantarray) {        # scalar context - single row
 
-        # return undef if no rows
-        return undef unless my $row = $rv->{rows}[0];
+        croak "$sig returned more than one row but was called in scalar context"
+            if @$rows > 1;
 
-        # return first row as hash ref if more that one column
-        return $row if keys %$row > 1;
-
-        # return row as simple column value if only one column
-        return $row->{$spname};
+        return $row1->{$spname} if $is_single_column;
+        return $row1;
     }
     # else void context - nothing to do
     return;
@@ -117,9 +150,10 @@ sub mk_process_args {
 sub mk_process_call {
     my ($spname, $arg_types) = @_;
 
-    # return a closure to execute the query and return result ref
+    # return a closure that will execute the query and return result ref
     my $sub;
     if ($arg_types) {
+
         my $placeholders = join ",", map { '$'.$_ } 1..@$arg_types;
         my $plan = ::spi_prepare("select * from $spname($placeholders)", @$arg_types);
         $sub = sub {
@@ -129,8 +163,10 @@ sub mk_process_call {
                 if $debug;
             return ::spi_exec_prepared($plan, @_)
         };
+
     }
     else {
+
         # XXX this branch isn't currently used
         $sub = sub {
             my $args = join ",", map { ::quote_nullable($_) } @_;
@@ -138,6 +174,7 @@ sub mk_process_call {
                 if $debug;
             return ::spi_exec_query("select * from $spname($args)");
         };
+
     }
     warn "mk_process_call($spname, @$arg_types): $sub"
         if $debug;
