@@ -37,13 +37,33 @@ Returning multi-row multi-column values:
 
 =head1 DESCRIPTION
 
+The C<call> function provides a simple effcicient way to call SQL functions
+from PostgreSQL PL/Perl code.
 
-=head2 Limitations
+The first parameter is a I<signature> that specifies the name of the function
+to call and then, in parenthesis, the types of any arguments as a comma
+separated list. For example:
+
+    'pi()'
+    'generate_series(int,int)'
+    'array_cat(int[], int[])'
+
+The types specify how the I<arguments> to the call should be interpreted.
+They don't have to exactly match the types used to declare the function you're
+calling.
+
+Any further parameters are used as arguments to the function being called.
+
+
+=head2 Limitations and Caveats
 
 Types that contain a comma can't be used in the call signature. That's not a
 problem in practice as it only affects 'C<numeric(p,s)>' and 'C<decimal(p,s)>'
 and the 'C<,s>' part isn't needed. Typically the 'C<(p,s)>' portion isn't used in
 signatures.
+
+The return value of functions that have a C<void> return type should not be
+relied upon.
 
 =cut
 
