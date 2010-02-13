@@ -131,12 +131,22 @@ spi_exec_query('drop function f3(int)');
 spi_exec_query(q{
 	create or replace function f4(VARIADIC numeric[]) returns float language plperlu as $$
 		use PostgreSQL::PLPerl::Call;
+		my $sum;
 		$sum += $_ for call('unnest(numeric[])', $_[0]);
 		return $sum;
 	$$
 });
+# call varadic with explicit number of args in the signature
 is call('f4(numeric, numeric)',          10,11   ), 21;
 is call('f4(numeric, numeric, numeric)', 10,11,12), 33;
+
+# call varadic using '...' in the signature
+is call('f4(numeric, numeric ...)',     10,11,12), 33;
+is call('f4(numeric ...)',              10,11,12), 33;
+is call('f4(numeric ...)',              10,11   ), 21;
+is call('f4(numeric ...)',              10      ), 10;
+# XXX doesn't work with no args - possibly natural consequence
+#is call('f4(numeric ...)'                       ), undef;
 spi_exec_query('drop function f4(varadic numeric[])');
 
 # === finish up
