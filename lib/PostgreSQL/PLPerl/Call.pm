@@ -255,7 +255,7 @@ sub call {
 
         # get a normalized signature to recheck the cache with
         # and also extract the SP name and argument types
-        my ($stdsig, $fullspname, $spname, $arg_types) = parse_signature($sig, $arity)
+        my ($stdsig, $fullspname, $spname, $arg_types) = _parse_signature($sig, $arity)
             or croak "Can't parse '$sig'";
         warn "parsed call($sig) => $stdsig\n"
             if $debug;
@@ -263,8 +263,8 @@ sub call {
         # recheck the cache with with the normalized signature
         $sig_cache{"$stdsig.$arity"} ||= [ # else a new entry (for both caches)
             $spname,     # is name of column for single column results
-            scalar mk_process_args($arg_types),
-            scalar mk_process_call($fullspname, $arity, $arg_types),
+            scalar _mk_process_args($arg_types),
+            scalar _mk_process_call($fullspname, $arity, $arg_types),
             $fullspname, # is name used in SQL to make the call
             $stdsig,
         ];
@@ -298,7 +298,7 @@ sub call {
 }
 
 
-sub parse_signature {
+sub _parse_signature {
     my ($sig, $arity) = @_;
 
     # extract types from signature, if any
@@ -334,7 +334,7 @@ sub parse_signature {
 }
 
 
-sub mk_process_args {
+sub _mk_process_args {
     my ($arg_types) = @_;
 
     return undef unless $arg_types;
@@ -365,7 +365,7 @@ sub mk_process_args {
 }
 
 
-sub mk_process_call {
+sub _mk_process_call {
     my ($fullspname, $arity, $arg_types) = @_;
 
     # return a closure that will execute the query and return result ref
@@ -390,5 +390,11 @@ sub mk_process_call {
 }
 
 1;
+
+=begin Pod::Coverage
+
+call
+
+=end Pod::Coverage
 
 # vim: ts=8:sw=4:sts=4:et
