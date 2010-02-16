@@ -1,5 +1,4 @@
 package PostgreSQL::PLPerl::Call;
-# vim: sw=4:ts=8:sts=4:et
 
 =head1 NAME
 
@@ -7,11 +6,11 @@ PostgreSQL::PLPerl::Call - Simple interface for calling SQL functions from Postg
 
 =head1 SYNOPSIS
 
-    use PostgreSQL::PLPerl::Call qw(call);
+    use PostgreSQL::PLPerl::Call;
 
 Returning single-row single-column values:
 
-    $pi = call('pi()'); # 3.14159265358979
+    $pi = call('pi'); # 3.14159265358979
 
     $net = call('network(inet)', '192.168.1.5/24'); # '192.168.1.0/24';
 
@@ -33,26 +32,43 @@ Returning single-row multi-column values:
 
 Returning multi-row multi-column values:
 
-    @rows = call('pg_get_keywords()'); # ({...}, {...}, ...)
+    @rows = call('pg_get_keywords'); # ({...}, {...}, ...)
+
+Alternative method-call syntax:
+
+    $pi   = SP->pi();
+    $seqn = SP->nextval($sequence_name);
 
 =head1 DESCRIPTION
 
-The C<call> function provides a simple effcicient way to call SQL functions
+The C<call> function provides a simple efficient way to call SQL functions
 from PostgreSQL PL/Perl code.
 
 The first parameter is a I<signature> that specifies the name of the function
-to call and then, in parenthesis, the types of any arguments as a comma
-separated list. For example:
+to call and, optionally, the types of the arguments.
+
+Any further parameters are used as argument values for the function being called.
+
+=head2 Signature
+
+The first parameter is a I<signature> that specifies the name of the function.
+The name should be given in the same way it would in an SQL statement, so
+if identifier quoting is needed it should be specified in the already quoted form.
+
+Immediately after the function name, in parenthesis, a comma separated list of
+type names can be given. For example:
 
     'pi()'
     'generate_series(int,int)'
     'array_cat(int[], int[])'
+    'myschema.myfunc(date, float8)'
 
 The types specify how the I<arguments> to the call should be interpreted.
 They don't have to exactly match the types used to declare the function you're
 calling.
 
-Any further parameters are used as arguments to the function being called.
+You also don't have to specify types for I<all> the arguments, just the
+left-most arguments that need types.
 
 =head2 Array Arguments
 
@@ -78,20 +94,66 @@ signature to indicate that the argument is varadic. For example:
 
     call('vary(int...)', @ints);
 
+==head2 Method-call Syntax
+
+An alternative syntax can be used for making calls:
+
+    SP->function_name(@args)
+
+For example:
+
+    $pi   = SP->pi();
+    $seqn = SP->nextval($sequence_name);
+
+Using this form you can't easily specify a schema name or argument types, and
+you can't call varadic functions.
+
+If cases where a signature is needed you might get a somewhat confusing error
+message. For example:
+
+    SP->generate_series(10,20);
+
+fails with the error "there is no parameter $1". The underlying problem is that
+C<generate_series> is a polymorphic function: different versions of the
+function are executed depending on the type of the arguments.
+
+==head2 Wrapping and Currying
+
+It's simple to wrap a call into an anonymous subroutine and pass that code
+reference around. For example:
+
+    $nextval_fn = sub { SP->nextval(@_) };
+    ...
+    $val = $nextval_fn->($sequence_name);
+
+or
+
+    $some_func = sub { call('some_func(int, date[], int)', @_) };
+    ...
+    $val = $some_func->($foo, \@dates, $debug);
+
+You can take this approach further by specifying some of the arguments in the
+anonymous subroutine so they don't all have to be provided in the call:
+
+    $some_func = sub { call('some_func(int, date[], int)', $foo, shift, $debug) };
+    ...
+    $val = $some_func->(\@dates);
+
+
 =head2 Results
 
 The C<call()> function processes return values in one of four ways depending on
 two criteria: single column vs. multi-column results, and list context vs scalar context.
 
 If the results contain a single column with the same name as the function that
-was called, then those values are extracted returned directly. This makes
+was called, then those values are extracted and returned directly. This makes
 simple calls very simple:
 
     @ary = call('generate_series(int,int)', 10, 15); # (10,11,12,13,14,15)
 
 Otherwise, the rows are returned as references to hashes:
 
-    @rows = call('pg_get_keywords()'); # ({...}, {...}, ...)
+    @rows = call('pg_get_keywords'); # ({...}, {...}, ...)
 
 If the C<call()> function was executed in list context then all the values/rows
 are returned, as shown above.
@@ -102,15 +164,22 @@ if more than one row is returned. For example:
     $foo = call('generate_series(int,int)', 10, 10); # 10
     $bar = call('generate_series(int,int)', 10, 11); # dies
 
+If you only want the first result you can use list context;
+
+    ($bar) =  call('generate_series(int,int)', 10, 11);
+     $bar  = (call('generate_series(int,int)', 10, 11))[0];
+
 
 =head2 Performance
 
 Internally C<call()> uses C<spi_prepare()> to create a plan to execute the
 function with the typed arguments.
 
-The plan is cached using the call 'signature' as the key. (Minor variations in
-the signature will still reuse the same plan because an extra cache entry is
-created using a 'normalized' signature.)
+The plan is cached using the call 'signature' as the key. Minor variations in
+the signature will still reuse the same plan.
+
+For varadic functions, separate plans are created and cached for each distinct
+number of arguments the function is called with.
 
 =head2 Limitations and Caveats
 
@@ -121,8 +190,12 @@ problem in practice as it only affects 'C<numeric(p,s)>' and 'C<decimal(p,s)>'
 and the 'C<,s>' part isn't needed. Typically the 'C<(p,s)>' portion isn't used in
 signatures.
 
+Functions with a varadic argument can't be called with no values for that
+argument.  You'll get a "function ... does not exist" error. This appears to be
+a PostgreSQL limitation.
+
 The return value of functions that have a C<void> return type should not be
-relied upon.
+relied upon, naturally.
 
 =cut
 
@@ -132,56 +205,47 @@ use Exporter;
 use Carp;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(call);
+our @EXPORT = qw(call SP);
 
 my %sig_cache;
 our $debug = 0;
 
+# encapsulated package to provide an AUTOLOAD interface to call()
+use constant SP => do { 
+    package PostgreSQL::PLPerl::Call::SP;
 
-sub parse_signature {
-    my $sig = shift;
-    $sig =~ m/^ \s* (\S+) \s* \( (.*?) \) (\d+) $/x
-        or return;
-    my ($spname, $arg_count, @arg_types) = ($1, $3, split(/\s*,\s*/, lc($2), -1));
-    s/^\s+// for @arg_types;
-    s/\s+$// for @arg_types;
-
-    # if varadic, replace '...' marker with the appropriate number
-    # of copies of the preceeding type name
-    if (@arg_types and $arg_types[-1] =~ s/\s*\.\.\.//) {
-        my $varadic_type = pop @arg_types;
-        push @arg_types, $varadic_type
-            until @arg_types >= $arg_count;
-    }
-    else {
-        return if $arg_count != @arg_types;
+    sub AUTOLOAD {
+        #(my $function = our $AUTOLOAD) =~ s/.*:://;
+        our $AUTOLOAD =~ s/.*:://;
+        shift;
+        return PostgreSQL::PLPerl::Call::call($AUTOLOAD, @_);
     }
 
-    my $stdsig = "$spname(".join(",",@arg_types).")$arg_count";
-    return ($stdsig, $spname, \@arg_types);
-}
+    __PACKAGE__;
+};
 
 
 sub call {
     my $sig = shift;
 
-    # add argument count to sig to handle varadic subs
-    $sig .= scalar @_;
+    my $arity = scalar @_; # argument count to handle varadic subs
 
-    my $how = $sig_cache{$sig} ||= do {
+    my $how = $sig_cache{"$sig.$arity"} ||= do {
 
         # get a normalized signature to recheck the cache with
         # and also extract the SP name and argument types
-        my ($stdsig, $spname, $arg_types) = parse_signature($sig)
+        my ($stdsig, $fullspname, $spname, $arg_types) = parse_signature($sig, $arity)
             or croak "Can't parse '$sig'";
-        warn "parsed call($sig) => $spname(@$arg_types) => $stdsig\n"
+        warn "parsed call($sig) => $stdsig\n"
             if $debug;
 
         # recheck the cache with with the normalized signature
-        $sig_cache{$stdsig} ||= [ # else a new entry (for both caches)
+        $sig_cache{"$stdsig.$arity"} ||= [ # else a new entry (for both caches)
             $spname,
-            mk_process_args($arg_types),
-            mk_process_call($spname, $arg_types),
+            scalar mk_process_args($arg_types),
+            scalar mk_process_call($fullspname, $arity, $arg_types),
+            $fullspname,
+            $stdsig,
         ];
     };
 
@@ -202,7 +266,7 @@ sub call {
     }
     elsif (defined wantarray) {        # scalar context - single row
 
-        croak "$sig returned more than one row but was called in scalar context"
+        croak "$sig was called in scalar context but returned more than one row"
             if @$rows > 1;
 
         return $row1->{$spname} if $is_single_column;
@@ -213,8 +277,41 @@ sub call {
 }
 
 
+sub parse_signature {
+    my ($sig, $arity) = @_;
+
+    # extract types from signature, if any
+    my $arg_types;
+    if ($sig =~ s/\s*\((.*?)\)\s*$//) {
+        $arg_types = [ split(/\s*,\s*/, lc($1), -1) ];
+        s/^\s+// for @$arg_types;
+        s/\s+$// for @$arg_types;
+
+        # if varadic, replace '...' marker with the appropriate number
+        # of copies of the preceding type name
+        if (@$arg_types and $arg_types->[-1] =~ s/\s*\.\.\.//) {
+            my $varadic_type = pop @$arg_types;
+            push @$arg_types, $varadic_type
+                until @$arg_types >= $arity;
+        }
+    }
+
+    # the full name is what's left in sig
+    my $fullspname = $sig;
+    (my $spname = $fullspname) =~ s/.*\.//; # remove schema, if any
+
+    # compose a normalized signature
+    my $stdsig = "$fullspname".
+        ($arg_types ? "(".join(",",@$arg_types).")" : "");
+
+    return ($stdsig, $fullspname, $spname, $arg_types);
+}
+
+
 sub mk_process_args {
     my ($arg_types) = @_;
+
+    return undef unless $arg_types;
 
     # return a closure that pre-processes the arguments of the call
     # else undef if no argument pre-processing is required
@@ -243,38 +340,29 @@ sub mk_process_args {
 
 
 sub mk_process_call {
-    my ($spname, $arg_types) = @_;
+    my ($spname, $arity, $arg_types) = @_;
 
     # return a closure that will execute the query and return result ref
-    my $sub;
-    if ($arg_types) {
 
-        my $placeholders = join ",", map { '$'.$_ } 1..@$arg_types;
-        my $plan = ::spi_prepare("select * from $spname($placeholders)", @$arg_types);
-        $sub = sub {
-            # XXX need to catch exceptions from here are rethrow using croak
-            # to appear to come from the callers location (outside this package)
-            warn "calling $spname($placeholders)[@$arg_types](@_)"
-                if $debug;
-            return ::spi_exec_prepared($plan, @_)
-        };
-
+    my $placeholders = join ",", map { '$'.$_ } 1..$arity;
+    my $sql = "select * from $spname($placeholders)";
+    my $plan = eval { ::spi_prepare($sql, $arg_types ? @$arg_types : ()) };
+    if ($@) { # internal error, should never happen
+        chomp $@;
+        croak "$@ while preparing $sql";
     }
-    else {
 
-        # XXX this branch isn't currently used
-        $sub = sub {
-            my $args = join ",", map { ::quote_nullable($_) } @_;
-            warn "calling $spname($args)"
-                if $debug;
-            return ::spi_exec_query("select * from $spname($args)");
-        };
-
-    }
-    warn "mk_process_call($spname, @$arg_types): $sub"
-        if $debug;
+    my $sub = sub {
+        # XXX need to catch exceptions from here and rethrow using croak
+        # to appear to come from the callers location (outside this package)
+        warn "calling $sql(@_) [@{$arg_types||[]}]"
+            if $debug;
+        return ::spi_exec_prepared($plan, @_)
+    };
 
     return $sub;
 }
 
 1;
+
+# vim: ts=8:sw=4:sts=4:et

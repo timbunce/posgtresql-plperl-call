@@ -1,4 +1,5 @@
-create or replace function test_call() returns text language plperlu as $func$
+CREATE OR REPLACE FUNCTION call_test10() RETURNS text
+LANGUAGE plperlu AS $func$
 
 use lib "/Users/timbo/pg/PostgreSQL-PLPerl-Call/lib";
 use PostgreSQL::PLPerl::Call;
@@ -14,19 +15,12 @@ my @ary;
 like call('pi()'), qr/^3.14159/;
 # with schema
 like call('pg_catalog.pi()'), qr/^3.14159/;
-# without parens/types
-like call('pi'),              qr/^3.14159/;
-like call('pg_catalog.pi'),   qr/^3.14159/;
 
 # bad calls
 eval { call('pi()', 42) };
-like $@, qr/there is no parameter \$1/;
-
-# --- method call syntax
-like SP->pi, qr/^3.14159/;
-# bad calls
-eval { SP->pi(42) };
-like $@, qr/there is no parameter \$1/;
+like $@, qr/expected 0 argument/;
+eval { call('pi', 42) };
+like $@, qr/Can't parse 'pi'/; # error from call() itself
 
 # --- one argument, simple types
 is call('abs(int)', -42), 42;
@@ -107,7 +101,7 @@ spi_exec_query(q{
 		return { r1=>10, r2=>11 };
 	$$
 });
-@ary = SP->f1();
+@ary = call('f1()');
 is scalar @ary, 1;
 ok $row = $ary[0];
 is $row->{r1}, 10;
@@ -121,13 +115,13 @@ spi_exec_query(q{
 		return undef;
 	$$
 });
-@ary = SP->f2();
+@ary = call('f2()');
 is scalar @ary, 5;
 is $ary[-1]->{r1}, 5;
 is $ary[-1]->{r2}, 6;
 spi_exec_query('drop function f2()');
 
-# ====== functions with defaults ======
+# ====== functions with defaults or varargs ======
 
 spi_exec_query(q{
 	create or replace function f3(int default 42) returns int language plperl as $$
@@ -137,33 +131,31 @@ spi_exec_query(q{
 is call('f3()'), 43;
 spi_exec_query('drop function f3(int)');
 
-# ====== functions varadic args ======
-
 spi_exec_query(q{
 	create or replace function f4(VARIADIC numeric[]) returns float language plperlu as $$
 		use PostgreSQL::PLPerl::Call;
-		my $sum = 100;
+		my $sum;
 		$sum += $_ for call('unnest(numeric[])', $_[0]);
 		return $sum;
 	$$
 });
 # call varadic with explicit number of args in the signature
-is call('f4(numeric, numeric)',          10,11   ), 121;
-is call('f4(numeric, numeric, numeric)', 10,11,12), 133;
+is call('f4(numeric, numeric)',          10,11   ), 21;
+is call('f4(numeric, numeric, numeric)', 10,11,12), 33;
 
 # call varadic using '...' in the signature
-is call('f4(numeric, numeric ...)',     10,11,12), 133;
-is call('f4(numeric ...)',              10,11,12), 133;
-is call('f4(numeric ...)',              10,11   ), 121;
-is call('f4(numeric ...)',              10      ), 110;
+is call('f4(numeric, numeric ...)',     10,11,12), 33;
+is call('f4(numeric ...)',              10,11,12), 33;
+is call('f4(numeric ...)',              10,11   ), 21;
+is call('f4(numeric ...)',              10      ), 10;
 # XXX doesn't work with no args - possibly natural consequence
-#is call('f4(numeric ...)'                      ), 100;
+#is call('f4(numeric ...)'                       ), undef;
 spi_exec_query('drop function f4(varadic numeric[])');
-
 
 # === finish up
 Test::More->builder->_ending;
 return (grep { !$_ } Test::More->builder->summary) ? "FAIL" : "Pass";
+
 $func$;
 
 select * from test_call();
