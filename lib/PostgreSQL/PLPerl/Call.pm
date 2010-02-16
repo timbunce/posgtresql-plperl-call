@@ -51,9 +51,8 @@ Any further parameters are used as argument values for the function being called
 
 =head2 Signature
 
-The first parameter is a I<signature> that specifies the name of the function.
-The name should be given in the same way it would in an SQL statement, so
-if identifier quoting is needed it should be specified in the already quoted form.
+The first parameter to C<call()> is a I<signature> that specifies the name of
+the function.
 
 Immediately after the function name, in parenthesis, a comma separated list of
 type names can be given. For example:
@@ -69,6 +68,12 @@ calling.
 
 You also don't have to specify types for I<all> the arguments, just the
 left-most arguments that need types.
+
+The function name should be given in the same way it would in an SQL statement,
+so if identifier quoting is needed it should be specified already enclosed in
+double quotes.  For example:
+
+    call('myschema."Foo Bar"');
 
 =head2 Array Arguments
 
@@ -170,6 +175,8 @@ If you only want the first result you can use list context;
      $bar  = (call('generate_series(int,int)', 10, 11))[0];
 
 
+=head1 OTHER INFORMATION
+
 =head2 Performance
 
 Internally C<call()> uses C<spi_prepare()> to create a plan to execute the
@@ -196,6 +203,15 @@ a PostgreSQL limitation.
 
 The return value of functions that have a C<void> return type should not be
 relied upon, naturally.
+
+=head2 Author and Copyright
+
+Tim Bunce L<http://www.tim.bunce.name>
+
+Copyright (c) Tim Bunce, Ireland, 2010. All rights reserved.
+You may use and distribute on the same terms as Perl 5.10.1.
+
+With thanks to TigerLead.com for sponsoring development.
 
 =cut
 
@@ -241,10 +257,10 @@ sub call {
 
         # recheck the cache with with the normalized signature
         $sig_cache{"$stdsig.$arity"} ||= [ # else a new entry (for both caches)
-            $spname,
+            $spname,     # is name of column for single column results
             scalar mk_process_args($arg_types),
             scalar mk_process_call($fullspname, $arity, $arg_types),
-            $fullspname,
+            $fullspname, # is name used in SQL to make the call
             $stdsig,
         ];
     };
@@ -298,7 +314,12 @@ sub parse_signature {
 
     # the full name is what's left in sig
     my $fullspname = $sig;
+
+    # extract the function name and un-escape it to get the column name
     (my $spname = $fullspname) =~ s/.*\.//; # remove schema, if any
+    if ($spname =~ s/^"(.*)"$/$1/) { # unescape
+        $spname =~ s/""/"/;
+    }
 
     # compose a normalized signature
     my $stdsig = "$fullspname".
@@ -340,12 +361,12 @@ sub mk_process_args {
 
 
 sub mk_process_call {
-    my ($spname, $arity, $arg_types) = @_;
+    my ($fullspname, $arity, $arg_types) = @_;
 
     # return a closure that will execute the query and return result ref
 
     my $placeholders = join ",", map { '$'.$_ } 1..$arity;
-    my $sql = "select * from $spname($placeholders)";
+    my $sql = "select * from $fullspname($placeholders)";
     my $plan = eval { ::spi_prepare($sql, $arg_types ? @$arg_types : ()) };
     if ($@) { # internal error, should never happen
         chomp $@;

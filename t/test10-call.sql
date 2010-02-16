@@ -139,6 +139,12 @@ spi_exec_query(q{
 is call('f3()'), 43;
 spi_exec_query('drop function f3(int)');
 
+# ====== functions with strange names ======
+
+spi_exec_query(q{create or replace function "q 1"() returns int language plperl as 'return 42'});
+is call('"q 1"'), 42;
+spi_exec_query('drop function "q 1"()');
+
 # ====== functions varadic args ======
 
 spi_exec_query(q{
