@@ -1,10 +1,11 @@
-CREATE OR REPLACE FUNCTION call_test10() RETURNS text
+CREATE FUNCTION call_test10() RETURNS text
 LANGUAGE plperlu AS $func$
 
-use lib "/Users/timbo/pg/PostgreSQL-PLPerl-Call/lib";
 use PostgreSQL::PLPerl::Call;
 
 use Test::More 'no_plan';
+my $Test = Test::More->builder;
+$Test->output(\my $test_output);
 
 my $row;
 my @ary;
@@ -161,13 +162,12 @@ is call('f4(numeric ...)',              10      ), 110;
 #is call('f4(numeric ...)'                      ), 100;
 spi_exec_query('drop function f4(varadic numeric[])');
 
-
 # === finish up
 
-select * from test_call();
-Test::More->builder->_ending;
-return (grep { !$_ } Test::More->builder->summary) ? "FAIL" : "Pass";
+$Test->_ending;
+my $failed = grep { !$_ } Test::More->builder->summary;
+warn "Test results:\n$test_output" if $failed;
+
+return ($failed) ? "FAIL" : "PASS";
 
 $func$;
-
-select * from test_call();
