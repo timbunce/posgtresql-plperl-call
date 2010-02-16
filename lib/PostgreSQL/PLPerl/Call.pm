@@ -39,6 +39,10 @@ Alternative method-call syntax:
     $pi   = SP->pi();
     $seqn = SP->nextval($sequence_name);
 
+Here C<SP> means Stored Procedure. (C<SP> is actually an imported constant whose
+value is the name of a package containing an AUTOLOAD function that dispatches
+to C<call()>. In case you wanted to know.)
+
 =head1 DESCRIPTION
 
 The C<call> function provides a simple efficient way to call SQL functions
@@ -57,7 +61,7 @@ the function.
 Immediately after the function name, in parenthesis, a comma separated list of
 type names can be given. For example:
 
-    'pi()'
+    'pi'
     'generate_series(int,int)'
     'array_cat(int[], int[])'
     'myschema.myfunc(date, float8)'
@@ -84,22 +88,27 @@ using the C<encode_array_literal()> function.
 
 =head2 Varadic Functions
 
-Functions with C<varadic> arguments can be called with a fixed number of
+Functions with C<variadic> arguments can be called with a fixed number of
 arguments by repeating the type name in the signature the same number of times.
 For example, given:
 
-    create function vary(VARADIC int[]) as ...
+    create function vary(VARIADIC int[]) as ...
 
 you can call that function with three arguments using:
 
     call('vary(int,int,int)', $int1, $int2, $int3);
 
 Alternatively, you can append the string 'C<...>' to the last type in the
-signature to indicate that the argument is varadic. For example:
+signature to indicate that the argument is variadic. For example:
 
     call('vary(int...)', @ints);
 
-==head2 Method-call Syntax
+Type names must be included in the signature in order to call variadic functions.
+
+Functions with a variadic argument must have at least one value for that
+argument. Otherwise you'll get a "function ... does not exist" error.
+
+=head2 Method-call Syntax
 
 An alternative syntax can be used for making calls:
 
@@ -111,7 +120,7 @@ For example:
     $seqn = SP->nextval($sequence_name);
 
 Using this form you can't easily specify a schema name or argument types, and
-you can't call varadic functions.
+you can't call variadic functions.
 
 If cases where a signature is needed you might get a somewhat confusing error
 message. For example:
@@ -122,7 +131,7 @@ fails with the error "there is no parameter $1". The underlying problem is that
 C<generate_series> is a polymorphic function: different versions of the
 function are executed depending on the type of the arguments.
 
-==head2 Wrapping and Currying
+=head2 Wrapping and Currying
 
 It's simple to wrap a call into an anonymous subroutine and pass that code
 reference around. For example:
@@ -185,7 +194,7 @@ function with the typed arguments.
 The plan is cached using the call 'signature' as the key. Minor variations in
 the signature will still reuse the same plan.
 
-For varadic functions, separate plans are created and cached for each distinct
+For variadic functions, separate plans are created and cached for each distinct
 number of arguments the function is called with.
 
 =head2 Limitations and Caveats
@@ -196,10 +205,6 @@ Types that contain a comma can't be used in the call signature. That's not a
 problem in practice as it only affects 'C<numeric(p,s)>' and 'C<decimal(p,s)>'
 and the 'C<,s>' part isn't needed. Typically the 'C<(p,s)>' portion isn't used in
 signatures.
-
-Functions with a varadic argument can't be called with no values for that
-argument.  You'll get a "function ... does not exist" error. This appears to be
-a PostgreSQL limitation.
 
 The return value of functions that have a C<void> return type should not be
 relied upon, naturally.
@@ -244,7 +249,7 @@ use constant SP => do {
 sub call {
     my $sig = shift;
 
-    my $arity = scalar @_; # argument count to handle varadic subs
+    my $arity = scalar @_; # argument count to handle variadic subs
 
     my $how = $sig_cache{"$sig.$arity"} ||= do {
 
@@ -303,11 +308,11 @@ sub parse_signature {
         s/^\s+// for @$arg_types;
         s/\s+$// for @$arg_types;
 
-        # if varadic, replace '...' marker with the appropriate number
+        # if variadic, replace '...' marker with the appropriate number
         # of copies of the preceding type name
         if (@$arg_types and $arg_types->[-1] =~ s/\s*\.\.\.//) {
-            my $varadic_type = pop @$arg_types;
-            push @$arg_types, $varadic_type
+            my $variadic_type = pop @$arg_types;
+            push @$arg_types, $variadic_type
                 until @$arg_types >= $arity;
         }
     }

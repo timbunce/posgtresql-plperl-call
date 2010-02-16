@@ -3,6 +3,10 @@ LANGUAGE plperlu AS $func$
 
 use PostgreSQL::PLPerl::Call;
 
+# XXX server process needs to have a working STDOUT
+# else "ERROR:  Can't dup STDOUT:  Bad file descriptor" error
+# from Test::Builder.
+
 use Test::More 'no_plan';
 my $Test = Test::More->builder;
 $Test->output(\my $test_output);
@@ -145,7 +149,7 @@ spi_exec_query(q{create or replace function "q 1"() returns int language plperl 
 is call('"q 1"'), 42;
 spi_exec_query('drop function "q 1"()');
 
-# ====== functions varadic args ======
+# ====== functions variadic args ======
 
 spi_exec_query(q{
 	create or replace function f4(VARIADIC numeric[]) returns float language plperlu as $$
@@ -155,18 +159,17 @@ spi_exec_query(q{
 		return $sum;
 	$$
 });
-# call varadic with explicit number of args in the signature
+# call variadic with explicit number of args in the signature
 is call('f4(numeric, numeric)',          10,11   ), 121;
 is call('f4(numeric, numeric, numeric)', 10,11,12), 133;
 
-# call varadic using '...' in the signature
+# call variadic using '...' in the signature
 is call('f4(numeric, numeric ...)',     10,11,12), 133;
 is call('f4(numeric ...)',              10,11,12), 133;
 is call('f4(numeric ...)',              10,11   ), 121;
 is call('f4(numeric ...)',              10      ), 110;
-# XXX doesn't work with no args - possibly natural consequence
-#is call('f4(numeric ...)'                      ), 100;
-spi_exec_query('drop function f4(varadic numeric[])');
+
+spi_exec_query('drop function f4(variadic numeric[])');
 
 # === finish up
 
