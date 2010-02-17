@@ -120,10 +120,9 @@ For example:
     $seqn = SP->nextval($sequence_name);
 
 Using this form you can't easily specify a schema name or argument types, and
-you can't call variadic functions.
-
-If cases where a signature is needed you might get a somewhat confusing error
-message. For example:
+you can't call variadic functions. (For various technical reasons.)
+In cases where a signature is needed, like variadic or polymorphic functions,
+you might get a somewhat confusing error message. For example:
 
     SP->generate_series(10,20);
 
@@ -216,7 +215,7 @@ Tim Bunce L<http://www.tim.bunce.name>
 Copyright (c) Tim Bunce, Ireland, 2010. All rights reserved.
 You may use and distribute on the same terms as Perl 5.10.1.
 
-With thanks to TigerLead.com for sponsoring development.
+With thanks to L<http://www.TigerLead.com> for sponsoring development.
 
 =cut
 
