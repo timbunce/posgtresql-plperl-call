@@ -17,8 +17,8 @@ my $dbname = "plperl_call_test".$$;
 system("createdb --echo $dbname") == 0
 	or plan skip_all => "Can't run createdb (PostgreSQL not installed?)";
 
-my $dbh = DBI->connect("dbi:Pg:dbname=$dbname")
-	or plan skip_all => "Can't connect to local database: $DBI::errstr";
+my $dbh = eval { DBI->connect("dbi:Pg:dbname=$dbname", undef, undef, { PrintError => 0 }) }
+	or plan skip_all => "Can't connect to local database: $@";
 
 # set @INC - also checks plperlu works
 $dbh->do(qq{
