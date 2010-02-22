@@ -20,6 +20,9 @@ system("createdb --echo $dbname") == 0
 my $dbh = eval { DBI->connect("dbi:Pg:dbname=$dbname", undef, undef, { PrintError => 0 }) }
 	or plan skip_all => "Can't connect to local database: $@";
 
+$dbh->{pg_server_version} >= 90000
+	or plan skip_all => "Requires PostgreSQL 9.0 or later";
+
 # set @INC - also checks plperlu works
 $dbh->do(qq{
 	DO '
