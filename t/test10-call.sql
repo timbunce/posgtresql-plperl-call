@@ -29,9 +29,9 @@ eval { call('pi()', 42) };
 like $@, qr/there is no parameter \$1/;
 
 # --- method call syntax
-like SP->pi, qr/^3.14159/;
+like PG->pi, qr/^3.14159/;
 # bad calls
-eval { SP->pi(42) };
+eval { PG->pi(42) };
 like $@, qr/there is no parameter \$1/;
 
 # --- one argument, simple types
@@ -113,7 +113,7 @@ spi_exec_query(q{
 		return { r1=>10, r2=>11 };
 	$$
 });
-@ary = SP->f1();
+@ary = PG->f1();
 is scalar @ary, 1;
 ok $row = $ary[0];
 is $row->{r1}, 10;
@@ -127,7 +127,7 @@ spi_exec_query(q{
 		return undef;
 	$$
 });
-@ary = SP->f2();
+@ary = PG->f2();
 is scalar @ary, 5;
 is $ary[-1]->{r1}, 5;
 is $ary[-1]->{r2}, 6;

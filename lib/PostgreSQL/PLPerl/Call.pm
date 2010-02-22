@@ -36,10 +36,10 @@ Returning multi-row multi-column values:
 
 Alternative method-call syntax:
 
-    $pi   = SP->pi();
-    $seqn = SP->nextval($sequence_name);
+    $pi   = PG->pi();
+    $seqn = PG->nextval($sequence_name);
 
-Here C<SP> means Stored Procedure. (C<SP> is actually an imported constant whose
+Here C<PG> simply means PostgreSQL. (C<PG> is actually an imported constant whose
 value is the name of a package containing an AUTOLOAD function that dispatches
 to C<call()>. In case you wanted to know.)
 
@@ -112,19 +112,19 @@ argument. Otherwise you'll get a "function ... does not exist" error.
 
 An alternative syntax can be used for making calls:
 
-    SP->function_name(@args)
+    PG->function_name(@args)
 
 For example:
 
-    $pi   = SP->pi();
-    $seqn = SP->nextval($sequence_name);
+    $pi   = PG->pi();
+    $seqn = PG->nextval($sequence_name);
 
 Using this form you can't easily specify a schema name or argument types, and
 you can't call variadic functions. (For various technical reasons.)
 In cases where a signature is needed, like variadic or polymorphic functions,
 you might get a somewhat confusing error message. For example:
 
-    SP->generate_series(10,20);
+    PG->generate_series(10,20);
 
 fails with the error "there is no parameter $1". The underlying problem is that
 C<generate_series> is a polymorphic function: different versions of the
@@ -135,7 +135,7 @@ function are executed depending on the type of the arguments.
 It's simple to wrap a call into an anonymous subroutine and pass that code
 reference around. For example:
 
-    $nextval_fn = sub { SP->nextval(@_) };
+    $nextval_fn = sub { PG->nextval(@_) };
     ...
     $val = $nextval_fn->($sequence_name);
 
@@ -225,14 +225,14 @@ use Exporter;
 use Carp;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(call SP);
+our @EXPORT = qw(call PG);
 
 my %sig_cache;
 our $debug = 0;
 
 # encapsulated package to provide an AUTOLOAD interface to call()
-use constant SP => do { 
-    package PostgreSQL::PLPerl::Call::SP;
+use constant PG => do { 
+    package PostgreSQL::PLPerl::Call::PG;
 
     sub AUTOLOAD {
         #(my $function = our $AUTOLOAD) =~ s/.*:://;
