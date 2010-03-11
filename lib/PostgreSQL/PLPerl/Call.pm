@@ -182,6 +182,41 @@ If you only want the first result you can use list context;
     ($bar) =  call('generate_series(int,int)', 10, 11);
      $bar  = (call('generate_series(int,int)', 10, 11))[0];
 
+=head1 ENABLING
+
+In order to use this module you need to arrange for it to be loaded when
+PostgreSQL initializes a Perl interpreter.
+
+Create a F<plperlinit.pl> file in the same directory as your
+F<postgres.conf> file, if it doesn't exist already.
+
+In the F<plperlinit.pl> file write the code to load this module.
+
+=head2 PostgreSQL 8.x
+
+Set the C<PERL5OPT> before starting postgres, to something like this:
+
+    PERL5OPT='-e "require q{plperlinit.pl}"'
+
+The code in the F<plperlinit.pl> should also include C<delete $ENV{PERL5OPT};>
+to avoid any problems with nested invocations of perl, e.g., via a C<plperlu>
+function.
+
+=head2 PostgreSQL 9.0
+
+For PostgreSQL 9.0 you can still use the C<PERL5OPT> method described above.
+Alternatively, and preferably, you can use the C<plperl.on_init> configuration
+variable in the F<postgres.conf> file.
+
+    plperl.on_init='require q{plperlinit.pl};'
+
+=head plperl
+
+You can use the L<PostgreSQL::PLPerl::Injector> module to make the
+call() function available for use in the C<plperlu> language:
+
+   use PostgreSQL::PLPerl::Injector;
+   inject_plperl_with_names_from(PostgreSQL::PLPerl::Call => 'call'); 
 
 =head1 OTHER INFORMATION
 
